@@ -1,0 +1,445 @@
+//
+//  ZZSocketManager.m
+//  ZZFramework
+//
+//  Created by zhuozhongkeji on 13-10-17.
+//  Copyright (c) 2013年 zhuozhongkeji. All rights reserved.
+//
+
+#import "ZZSocketManager.h"
+static ZZSocketManager *socketManager = nil;
+@implementation ZZSocketManager
+#pragma mark -
+#pragma mark ------------Singleton Methods------------
+/* signle mode  define  ... */
++(ZZSocketManager*)sharedSocketManager{
+    
+    if(socketManager == nil)
+    {
+        
+        socketManager = [[ZZSocketManager alloc] init];//[[super allocWithZone:NULL] init] ;
+        [socketManager managerInit];
+        
+    }
+    return socketManager;
+    
+    
+}
+-(id)init
+{
+    self = [super init];
+    if(self)
+    {
+        m_socketState = ZZSocketState_NONE;
+        self.observerArray = [[NSMutableArray arrayWithCapacity:0] retain];
+        
+        messageQueue = [[NSMutableArray  arrayWithCapacity:0] retain];
+    }
+    return self;
+}
+
+-(void)managerInit
+{
+    
+}
+
+-(void)registerObserver:(id<ZZSocketInterface>)observer
+{
+     if ([self.observerArray containsObject:observer] == NO)
+     {
+        // [observer retain];
+         [self.observerArray addObject:observer];
+     }
+
+    
+    
+}
+-(void)unRegisterObserver:(id<ZZSocketInterface>)observer
+{
+    if ([self.observerArray containsObject:observer])
+    {
+        [self.observerArray removeObject:observer];
+    }
+}
+
+#pragma mark -
+#pragma mark ----------------Socket Methods----------------
+/*  other check net status */
+-(enum ZZSocketState)getSocketStatus
+{
+    return m_socketState;
+}
+
+-(void)NoticeSocketStateToDelegate :(enum ZZSocketState)socketState
+{
+    for(id<ZZSocketInterface>observer in self.observerArray)
+    {
+        if([observer respondsToSelector:@selector(socketStateNotice:)])
+        {
+             [observer socketStateNotice:m_socketState];
+        }
+    }
+}
+
+/*connectTo server */
+-(void)connectServer : (NSString*)serverIP : (int)serverPort
+{
+    serverIP = @"192.168.1.101";
+    
+    if(m_socketState != ZZSocketState_NONE || serverIP == nil)//&& m_socket != 0xffffffff)
+        return;
+    
+    m_socketState = ZZSocketState_CONNECTING;
+    [self NoticeSocketStateToDelegate :m_socketState ];
+    
+    NSLog(@"the system will connect to server : '%@'",serverIP);
+    NSLog(@"the system will connect to serverPort : '%d'",serverPort);
+    
+    //创建连接
+    CFSocketContext CTX = {0, (__bridge void *)(self), NULL, NULL, NULL};
+    m_socket = CFSocketCreate(kCFAllocatorDefault, PF_INET, SOCK_STREAM, IPPROTO_TCP, kCFSocketConnectCallBack, TCPServerConnectCallBack, &CTX);
+    
+    if (m_socket == nil )
+    {
+        m_socketState = ZZSocketState_CREATE_CLOSE_FAIL;
+        [self NoticeSocketStateToDelegate:m_socketState];
+    }
+    else
+    {
+        struct sockaddr_in addr4;
+        memset(&addr4, 0, sizeof(addr4));
+        addr4.sin_len = sizeof(addr4);
+        addr4.sin_family = AF_INET;
+        addr4.sin_port = htons(serverPort);//端口
+        addr4.sin_addr.s_addr = inet_addr([serverIP UTF8String]);//IP地址
+        
+        CFDataRef address = CFDataCreate(kCFAllocatorDefault, (UInt8 *)&addr4, sizeof(addr4));
+        CFSocketConnectToAddress(m_socket, address, -1);
+        
+        CFRunLoopRef cfrl = CFRunLoopGetCurrent();
+        //NSLog(@"socket connect , now thread is:%x",cfrl);
+        //NSLog(@"socket connect , main thread is :%x",CFRunLoopGetMain());
+        CFRunLoopSourceRef source = CFSocketCreateRunLoopSource(kCFAllocatorDefault, m_socket, 0);
+        CFRunLoopAddSource(cfrl, source, kCFRunLoopCommonModes);
+        CFRelease(source);
+    }
+}
+
+//连接成功以及发送成功接受的回调函数：
+static void TCPServerConnectCallBack(CFSocketRef socket, CFSocketCallBackType type, CFDataRef address, const void *data, void *info) {
+    
+    NSLog(@"Call Back ...");
+    BOOL result = NO;
+    ZZSocketManager *socketManager = (ZZSocketManager*)info;
+    do{
+    if(nil == socketManager)
+    {
+        result = NO;
+        break;
+    }
+    if([socketManager getSocketStatus]!=ZZSocketState_CONNECTING )
+    {
+        /*  some error */
+        result = NO;
+        break;
+    }
+    if (data != NULL) {
+       
+        result = NO;
+    }
+    else
+    {
+        result = YES;
+       
+    }
+    }while(FALSE);
+    
+    [socketManager connectFinished :result];
+}
+
+- (void)connectFinished :(BOOL)result
+{
+    if(result)
+    {
+        m_socketState =ZZSocketState_CONNECTED;
+        /*  open recv thread */
+        self.sendThreadRun = YES;
+        self.recvThreadRun = YES;
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),^{
+            [self readStream];
+        });
+        /* open send thread */
+        
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0),^{
+            [self sendThread];});
+    }
+    else{
+        m_socketState = ZZSocketState_CONNECT_FAIL;
+        NSLog(@"connect fail!");
+    }
+    
+    //0.5秒后调用这个，改变状态
+    [self performSelector:@selector(NoticeSocketStateToDelegate:) withObject:nil afterDelay:(0.5)];
+    //[self NoticeSocketStateToDelegate:m_socketState];
+}
+
+- (void)sendThread
+{
+    while(self.sendThreadRun)
+    {
+        @synchronized(messageQueue)
+        {
+            if([messageQueue count] > 0 && m_socketState == ZZSocketState_CONNECTED)
+            {
+                 NSLog(@"sendThread send Message");
+                 NSData *message = [messageQueue objectAtIndex:0];
+                 [self sendMessageToSocket:message];
+                [messageQueue removeObjectAtIndex:0];
+             }
+        }
+        //sleep(200);
+        [NSThread sleepForTimeInterval:0.2];
+    }
+}
+
+char sendBuffer[ZZ_NET_BUFFER_SIZE] ;
+-(void)sendMessageToSocket:(NSData*)message
+{
+    /* main  context thread changed... */
+    if(message == nil)
+    {
+        NSLog(@"socket 不发送空数据！");/* don't need to report */
+        return;
+    }
+ //   memset(sendBuffer, 0, ZZ_NET_BUFFER_SIZE);
+    if(m_socketState != ZZSocketState_CONNECTED )
+    {
+        NSLog(@"error : socket is null\n");
+        return;
+    }
+   // int messageLength = 0;
+   // const char *dataStr = [message bytes];
+   // messageLength = htonl([message length] + 4);
+   // memset(sendBuffer,0,sizeof(sendBuffer));
+   // memcpy(sendBuffer, (char*)&messageLength, 4);
+   // memcpy(sendBuffer , dataStr  , [message length]);
+    
+    int length = 0;
+    int index = 0;
+    int dataLength = [message length];//strlen(sendBuffer + 4) + 4;
+    //NSString *logInfo = [NSString stringWithFormat:@"######sendingMessage######:\n%@",[[NSString alloc]initWithData:message encoding:NSUTF8StringEncoding]];
+    
+   // NSLog(@"######sendingMessage######:\n%@",logInfo);
+
+    
+    //    if(m_socketState != ZZSocketState_CONNECTED )
+    //    {
+    //        [self NoticeStateToDelegate:ZZSocketManagerType_SendMessageError];
+    //    }
+    while(index < dataLength && m_socket)
+    {
+        length =  send(CFSocketGetNative(m_socket), [message bytes] + index, dataLength - index, 0);
+        index += length;
+    }
+}
+
+/* close socket, but should do something for close BY server  */
+-(void)closeSocket:(BOOL)closeByClient
+{
+    if(closeByClient)
+        NSLog(@"close socket by client!\n");
+    else
+        NSLog(@"close socket by server!\n");
+    m_socketState = ZZSocketState_NONE;
+   _recvThreadRun = NO;
+    self.sendThreadRun = NO;
+    if (m_socket != nil) {
+        CFSocketInvalidate(m_socket);
+        m_socket = nil;
+    }
+  //  [[ZZSocketManager sharedSocketManager] NoticeSocketStateToDelegate:m_socketState];
+    
+}
+/*   发送消息   */
+
+-(void)sendMessage:(NSData *)data
+{
+    
+    @synchronized(messageQueue)
+    {
+    [messageQueue addObject:data];
+    return;
+    }
+}
+
+
+/*  清理掉缓存池里面的数据    */
+
+-(void)throwNowPacket :(int) packetSize
+{
+    if(packetSize < 0)
+        return;
+    char *temData = malloc(packetSize);
+    int length = 0;
+    while(length < packetSize && m_socket && temData)
+    {
+        length += recv(CFSocketGetNative(m_socket), temData, packetSize - length,0);
+    }
+    free(temData);
+    
+}
+/*  收到消息处理器   */
+
+char buffer[ZZ_NET_BUFFER_SIZE];
+NSMutableData *recvData = nil;
+NSString *recvInfo = nil;
+-(void)readStream{
+    
+//    NSLog(@"Read Stream...");
+    //  NSLog(@"socket connect , now thread is:%x",CFRunLoopGetCurrent);
+    // NSLog(@"socket connect , main thread is :%x",CFRunLoopGetMain());
+    // NSLog(@"now readStream thread is %x,and socket is :%x",CFRunLoopGetCurrent(),socket);
+    /* recvThreadRun  = BOOL */
+  
+    int length = 0;
+    int index = -1;
+    BOOL running = true;
+    int packet = 0;
+    int packetLength = 0;
+    
+    while (_recvThreadRun)
+    {
+       
+        
+        running = YES;/* open the while recv  */
+        index =  0;
+        packet = 0;
+        length = 0;
+        packetLength = 0;
+        
+        // memset(buffer, NGO_NET_BUFFER_SIZE, 0); 7 字节
+        length = recv(CFSocketGetNative(m_socket), buffer, 7,0);
+//        if(recvData != nil)
+//        {
+//            [recvData release];
+//            recvData = nil;
+//        }
+        recvData =[NSMutableData data];
+        index += length;
+        if(length <= 0 )//&&  self.disconnectByPhone == 1)
+        {
+            self.disconnectByPhone = 0;
+            NSLog(@"####################应用程序自身，关闭socket！！！######################");
+            running = NO;
+
+            break;
+            
+        }
+        else if(length <= 0 &&  self.disconnectByPhone == 0)
+        {
+            /* server error */
+            NSLog(@"####################服务器故障，关闭socket！！！######################");
+            m_socketState = ZZSocketState_CLOSE_BY_SERVER;
+            [self socketStateNotice:m_socketState];
+            running = NO;
+            
+            break;
+        }
+        else{
+            /* get the datas length */
+            memcpy((char*)&packet, buffer + 3, 4);
+            packetLength = packet;//ntohl(packet);
+            if(packetLength >= ZZ_NET_BUFFER_SIZE)
+            {
+                NSLog(@"  error: 系统不支持改数据容量！！！");
+                [self throwNowPacket :packetLength - 4];
+                running = NO;
+                
+            }
+        }
+        
+        while(running)
+        {
+            
+            /* get this packet length */
+            
+            if(m_socket)
+            {
+                memset(buffer,0,sizeof(buffer));
+
+                length = recv(CFSocketGetNative(m_socket), buffer, packetLength - index,0);
+                
+//                NSLog(@"get packet data count is :%d,length is %d",packetLength,length);
+                
+//                [recvData appendBytes:buffer length:length];
+                [recvData appendData:[NSData dataWithBytes:buffer length:length]];
+                //strlen(buffer + (index == 0?4:0)) ];
+                index += length;
+                
+             
+                if( index >=  packetLength )
+                {
+                    //[recvData appendBytes:'\0' length:1];
+                    running = NO;
+                }
+                else
+                {
+                    continue;
+                    
+                }
+                if(nil == recvData)
+                {
+                    NSLog(@"################get datas error!");
+                }
+                
+                int packetIndex = 0;
+                UInt32 messageType = 0;
+                memcpy((char*)&messageType, recvData.bytes, sizeof(messageType));
+                packetIndex += sizeof(messageType);
+                
+                UInt32 sessionID = 0;
+                memcpy((char*)&sessionID, recvData.bytes + packetIndex, sizeof(sessionID));
+                packetIndex += sizeof(sessionID);
+               // _sessionID = sessionID;
+                
+                
+                UInt16 messageClass = 0;
+                memcpy((char*)&messageClass, recvData.bytes + packetIndex,sizeof(messageClass));
+                packetIndex += sizeof(messageClass);
+                
+                UInt16 returnCode = -1;
+                memcpy((char*)&returnCode, recvData.bytes + packetIndex,sizeof(returnCode));
+                packetIndex += sizeof(returnCode);
+                
+                
+                NSData *tem = [NSData dataWithBytes:recvData.bytes + packetIndex  length:recvData.length - packetIndex - 3];
+               recvInfo = [NSString stringWithFormat:@"recv is %@",[[NSString alloc] initWithData:tem encoding:NSUTF8StringEncoding] ];
+//                //[recvData retain];
+                NSLog(@"%@",recvInfo);
+                
+                dispatch_async(dispatch_get_main_queue(),^{
+                    for(id<ZZSocketInterface>observer in self.observerArray)
+                    {
+//                        if([observer respondsToSelector:@selector(socketRecvMessage:)])
+//                        {
+//                            [observer socketRecvMessage:recvData];
+//                        }
+                        if([observer respondsToSelector:@selector(socketRecvMessage:::)])
+                        {
+                            [observer socketRecvMessage:recvData :messageClass :messageType];
+                        }
+                    }
+                });
+                
+                [NSThread sleepForTimeInterval:0.3];
+            
+               //[recvData release];
+            }
+            
+        }
+        
+        
+    }
+    
+}
+@end

@@ -1,0 +1,49 @@
+//
+//  Prefix header
+//
+//  The contents of this file are implicitly included at the beginning of every source file.
+//
+
+#import <Availability.h>
+
+#ifndef __IPHONE_3_0
+#warning "This project uses features only available in iOS SDK 3.0 and later."
+#endif
+
+#ifdef __OBJC__
+    #import <UIKit/UIKit.h>
+    #import <Foundation/Foundation.h>
+
+#define  TITLEFONT    [UIFont systemFontOfSize:18]
+#define  TITLECOLOR   [UIColor blackColor]
+
+
+#import "projectSetting.h"
+#endif
+
+#import "UIAlertView+Zhangxx.h"
+#import "FDSPublicManage.h"
+#import "UIImage+Zhangxx.h"
+#import "MobClick.h"
+
+
+// 定义搜索类型
+typedef enum {
+    kSearchType_IWanted,
+    kSearchType_ICan,
+}SearchType;
+
+#define kColorFile  @"/mainColor.bat"
+
+#define kScreenWidth   [[UIScreen mainScreen] bounds].size.width
+#define kScreenHeight  [[UIScreen mainScreen] bounds].size.height
+#define kTopViewHeight 64
+#define kRequestCount  10 // 一次请求信息的条数
+
+
+//控制调试信息
+#define DEBUG_ZZSession_SendMessage_withDic
+
+#define DEBUG_ZZHttpManager_showObservers
+// 调试服务器回包处理
+#define DEBUG_ZZSessionManager_receiveHttpMessage

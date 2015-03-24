@@ -1,0 +1,9 @@
+自定义单元格有 
+
+*Cell       定义了各个子控件
+*CellFrame  定义了各个子控件的位置
+*CellModel  定义了各个子控件要显示的内容
+
+依赖关系：
+ *Cell 依赖 *CellFrame
+ *CellFrame 依赖 *CellModle
