@@ -37,7 +37,7 @@ typedef enum {
 @property(nonatomic,assign) int searchetype;
 @property(nonatomic,retain)NSString* rank_index;//排名
 @property(nonatomic,retain)NSString* ranking;//榜单排名
-@property(nonatomic,assign)int xnid;
+//@property(nonatomic,assign)int xnid;
 @property(nonatomic,retain)NSString* content;//笑话内容
 
 //不会想将图片数组分成两个数组吧？

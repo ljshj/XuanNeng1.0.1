@@ -837,7 +837,7 @@
     auditSubmitBackView.image = [UIImage imageNamed:@"bg_audit_submit"];
     CGFloat auditSubmitW = 48;
     CGFloat auditSubmitX = self.view.frame.size.width-auditSubmitW;
-    CGFloat auditSubmitY = self.view.frame.size.height-300;
+    CGFloat auditSubmitY = self.view.frame.size.height-150;
     CGFloat auditSubmitH = 241*0.5;
     auditSubmitBackView.frame = CGRectMake(auditSubmitX, auditSubmitY, auditSubmitW, auditSubmitH);
     [self.view addSubview:auditSubmitBackView];
@@ -1599,14 +1599,21 @@
 -(void)XuanNengPaiHangBangCell:(XuanNengPaiHangBangCell *)cell
          didClickButtonAtIndex:(NSInteger)index
 {
-    //判断是否已经登录
-    if ([[FDSUserManager sharedManager] getNowUserState]!=USERSTATE_LOGIN) {
-        PersonViewController *perVC = [[PersonViewController alloc] init];
-        perVC.isAppearBackBtn = YES;
-        self.isPresentModal = YES;
-        [self.navigationController pushViewController:perVC animated:YES];
-        return;
+    
+    //分享不用登录
+    if (index!=2) {
+        
+        //判断是否已经登录
+        if ([[FDSUserManager sharedManager] getNowUserState]!=USERSTATE_LOGIN) {
+            PersonViewController *perVC = [[PersonViewController alloc] init];
+            perVC.isAppearBackBtn = YES;
+            self.isPresentModal = YES;
+            [self.navigationController pushViewController:perVC animated:YES];
+            return;
+        }
+        
     }
+    
     
     if (index == 0) {
        
@@ -1690,7 +1697,7 @@
                 
                 
                 //处于分享状态，不能删除代理
-                [self shareWeiQiang:model.content imageUrl:nil xnid:model.xnid];
+                [self shareWeiQiang:model.content imageUrl:nil xnid:[model.jokeid intValue]];
             }
         }
         default:

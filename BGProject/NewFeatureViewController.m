@@ -15,13 +15,20 @@
 
 @end
 
-@implementation NewFeatureViewController
+@implementation NewFeatureViewController{
+    
+    UIImageView *_rightImageView;
+    UIImageView *_leftImageView;
+    UIView *_backView;
+    UIImageView *_waitView;
+}
 
 - (void)viewDidLoad {
     
     [super viewDidLoad];
     
     [self setupScrollView];
+    
    
 }
 
@@ -39,24 +46,73 @@
     CGFloat imageW = scrollView.frame.size.width;
     CGFloat imageH = scrollView.frame.size.height;
     for (int index = 0; index<IWNewfeatureImageCount; index++) {
-    
-        UIImageView *imageView = [[UIImageView alloc] init];
         
-        // 设置图片
-        NSString *name = [NSString stringWithFormat:@"new_feature_%d", index + 1];
-        imageView.image = [UIImage imageWithImgName:name];
+        UIImageView *imageView = nil;
         
-        // 设置frame
-        CGFloat imageX = index * imageW;
-        imageView.frame = CGRectMake(imageX, 0, imageW, imageH);
+        if (index==IWNewfeatureImageCount-1) {
+            
+            _backView = [[UIView alloc] init];
+            _backView.userInteractionEnabled = YES;
+           
+            _leftImageView = [[UIImageView alloc] init];
+            NSString *leftname = [NSString stringWithFormat:@"new_feature_%d_left", index + 1];
+            
+            _leftImageView.image = [UIImage imageWithImgName:leftname];
+            
+            _rightImageView = [[UIImageView alloc] init];
+            NSString *rightname = [NSString stringWithFormat:@"new_feature_%d_right", index + 1];
+            _rightImageView.image = [UIImage imageWithImgName:rightname];
+            
+            
+        }else{
+            
+            imageView = [[UIImageView alloc] init];
+            // 设置图片
+            NSString *name = [NSString stringWithFormat:@"new_feature_%d", index + 1];
+            imageView.image = [UIImage imageWithImgName:name];
+            
+        }
         
-        [scrollView addSubview:imageView];
+        
+        if (index==IWNewfeatureImageCount-1) {
+            
+            CGFloat leftImageX = 0;
+            _leftImageView.frame = CGRectMake(leftImageX, 0, imageW*0.5, imageH);
+            
+            CGFloat rightImageX = imageW*0.5;
+            _rightImageView.frame = CGRectMake(rightImageX, 0, imageW*0.5, imageH);
+            
+            CGFloat backX = index * imageW;
+            _backView.frame = CGRectMake(backX, 0, imageW, imageH);
+            
+        }else{
+            
+            // 设置frame
+            CGFloat imageX = index * imageW;
+            imageView.frame = CGRectMake(imageX, 0, imageW, imageH);
+            
+        }
+        
+        // 在最后一个图片上面添加按钮
+        if (index == IWNewfeatureImageCount - 1){
+            
+            [scrollView addSubview:_backView];
+            
+            [_backView addSubview:_leftImageView];
+            [_backView addSubview:_rightImageView];
+            
+        }else{
+            
+            [scrollView addSubview:imageView];
+            
+        }
         
         // 在最后一个图片上面添加按钮
         if (index == IWNewfeatureImageCount - 1) {
             
-            [self setupLastImageView:imageView];
+            [scrollView bringSubviewToFront:_leftImageView];
             
+            [self setupLastImageView:_leftImageView];
         }
     }
     
@@ -66,6 +122,14 @@
     scrollView.pagingEnabled = YES;
     scrollView.bounces = NO;
     
+    _waitView = [[UIImageView alloc] init];
+    NSString *waitname = [NSString stringWithFormat:@"wait"];
+    _waitView.image = [UIImage imageWithImgName:waitname];
+    _waitView.frame = _backView.frame;
+    _waitView.hidden = YES;
+    [scrollView addSubview:_waitView];
+    
+    [scrollView sendSubviewToBack:_waitView];
     
 }
 
@@ -84,13 +148,13 @@
     [startButton setBackgroundImage:[UIImage imageNamed:@"show_selected"] forState:UIControlStateHighlighted];
     
     // 2.设置frame
-    CGFloat startButtonW = 160*0.5;
+    CGFloat startButtonW = 503*0.5;
     CGFloat startButtonX = (self.view.bounds.size.width-startButtonW)*0.5+5;
-    CGFloat startButtonY = self.view.frame.size.height*0.82;
-    CGFloat startButtonH = 58*0.5;
+    CGFloat startButtonY = self.view.frame.size.height*0.65;
+    CGFloat startButtonH = 89*0.5;
     startButton.frame = CGRectMake(startButtonX,startButtonY , startButtonW, startButtonH);
     [startButton addTarget:self action:@selector(start:) forControlEvents:UIControlEventTouchUpInside];
-    [imageView addSubview:startButton];
+    [_backView addSubview:startButton];
     
 
 }
@@ -106,9 +170,29 @@
     // 显示状态栏
     //[UIApplication sharedApplication].statusBarHidden = NO;
     
-    // 切换窗口的根控制器
-    AppDelegate *appdelegate =(AppDelegate*)[UIApplication sharedApplication].delegate;
-    self.view.window.rootViewController = appdelegate.tempTabBarController;
+    __unsafe_unretained NewFeatureViewController *nv = self;
+    
+    [UIView animateWithDuration:2.0 animations:^{
+        
+        nv->_waitView.hidden = NO;
+        nv->_waitView.alpha = 0.2;
+        
+        CGRect leftframe = _leftImageView.frame;
+        leftframe.origin.x = leftframe.origin.x-leftframe.size.width;
+        nv->_leftImageView.frame = leftframe;
+        
+        CGRect rightframe = _rightImageView.frame;
+        rightframe.origin.x = rightframe.origin.x+rightframe.size.width;
+        nv->_rightImageView.frame = rightframe;
+        
+    } completion:^(BOOL finished) {
+        
+        // 切换窗口的根控制器
+        AppDelegate *appdelegate =(AppDelegate*)[UIApplication sharedApplication].delegate;
+        self.view.window.rootViewController = appdelegate.tempTabBarController;
+        
+    }];
+    
     
 }
 

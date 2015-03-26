@@ -258,6 +258,19 @@
     [_distanceLab setFrame:cellFrame.distanceFrame];
     [_distanceLab setFont:kMiddleFont];
     
+    //如果是榜单就隐藏距离
+    if (model.jokeType==JokeTypeRankList) {
+        
+        _distanceTagImgView.hidden = YES;
+        _distanceLab.hidden = YES;
+        
+    }else{
+        
+        _distanceTagImgView.hidden = NO;
+        _distanceLab.hidden = NO;
+        
+    }
+    
     //时间标签
     [_dateLab setText:model.date_time];
     [_dateLab setFont:kMiddleFont];
